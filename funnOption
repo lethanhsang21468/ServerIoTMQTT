@@ -1,0 +1,316 @@
+package Option;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class FuncOption {
+
+	public PreparedStatement statement;
+	public Connection sqlConn;
+
+	public FuncOption() {
+
+	}
+
+	/**
+	 * Open connection to database SQL server.
+	 * 
+	 * @return -1 Failed. 0 Success.
+	 */
+
+	public int sqlOpen(String host, String user, String password) {
+		try {
+			String myDriver = "org.gjt.mm.mysql.Driver";
+			String myUrl = "jdbc:mysql://localhost/REGISTER";
+			Class.forName(myDriver);
+			sqlConn = DriverManager.getConnection(myUrl, user, password);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return -1;
+		}
+		return 0;
+	}
+
+	/**
+	 * Close connection to database SQL server.
+	 * 
+	 * @return -1 Failed. 0 Success.
+	 */
+	public int sqlClose() {
+		try {
+			sqlConn.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			return -1;
+		}
+		return 0;
+	}
+
+	/**
+	 * Delete user base on ID.
+	 * 
+	 * @return false Failed.
+	 * @return true Success.
+	 */
+	public boolean delete_User(String UserName, String PassWord) throws SQLException {
+		PreparedStatement pt = null;
+
+		try {
+			sqlConn.setAutoCommit(false);
+			String sql = "DELETE FROM Users WHERE UserName = ? AND PassWord = ?";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			pt.executeUpdate();
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
+		}
+		return true;
+	}
+
+	/*
+	 * Login de dang nhap dua vao UserName va PassWord
+	 * 
+	 * @return -1 if Fail
+	 * 
+	 * @return ID if success
+	 */
+	public int Login(String UserName, String PassWord) throws SQLException {
+		PreparedStatement pt = null;
+		int login_ID = 0;
+		ResultSet rs = null;
+		try {
+
+			sqlConn.setAutoCommit(false);
+			String sql = " SELECT * FROM Users WHERE(UserName = ? AND PassWord = ?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
+
+			if (rs.next()) {
+
+				String checkUser = rs.getString(2);
+				String checkPass = rs.getString(3);
+
+				UserName = rs.getString("UserName").trim();
+				PassWord = rs.getString("PassWord").trim();
+
+				if ((checkUser.equals(UserName) && checkPass.equals(PassWord))) {
+
+					login_ID = rs.getInt(1);
+					System.out.println(" Ban da dang nhap thanh cong ");
+
+				}
+
+			}
+
+			else {
+				System.out.println("Dang nhap that bai, yeu cau nhap lai ");
+				return -1;
+			}
+
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			System.out.println("Fail");
+			return -1;
+
+		}
+		pt.close();
+
+		return login_ID;
+
+	}
+
+	/*
+	 * Register User
+	 * 
+	 * @return -1 Fail
+	 * 
+	 * @return ID User
+	 */
+	public int Register_User(String UserName, String PassWord) throws SQLException {
+		int check_register = 1;
+		int User_ID = 0;
+		PreparedStatement pt = null;
+		ResultSet rs = null;
+		String sql;
+		try {
+
+			sqlConn.setAutoCommit(false);
+			sql = "SELECT * FROM Users WHERE(UserName =? AND PassWord =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
+			System.out.println("select error 1");
+			while (rs.next()) {
+
+				String checkUser = rs.getString(2);
+				String checkPass = rs.getString(3);
+
+				UserName = rs.getString(2).trim();
+				PassWord = rs.getString(3).trim();
+				if ((checkUser.equals(UserName) && checkPass.equals(PassWord))) {
+					check_register = 0;
+					System.out.println("22222222");
+				}
+
+			}
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			System.out.println("select error");
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return -1;
+		}
+		pt.close();
+		if (check_register == 1) {
+			// insert
+			System.out.println("11111");
+			sql = "INSERT INTO Users(UserName,PassWord) VALUES(?,?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			pt.executeUpdate();
+			sql = "SELECT ID FROM Users WHERE(UserName =? AND PassWord =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
+
+			while (rs.next()) {
+				User_ID = rs.getInt(1);
+			}
+			sqlConn.commit();
+		}
+		return User_ID;
+
+	}
+
+	/*
+	 * Register House
+	 * 
+	 * @return -1 Fail
+	 * 
+	 * @return House_ID
+	 */
+	public int Register_House(String Name, String MAC_Add) throws SQLException {
+
+		PreparedStatement pt = null;
+		int House_ID = 0;
+		ResultSet rs = null;
+		try {
+			sqlConn.setAutoCommit(false);
+
+			String sql = "INSERT INTO Home(Name,MAC_Add) VALUES(?,?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, Name);
+			pt.setString(2, MAC_Add);
+			pt.executeUpdate();
+			sql = "SELECT ID FROM Home WHERE(Name =? AND MAC_Add =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, Name);
+			pt.setString(2, MAC_Add);
+			rs = pt.executeQuery();
+
+			while (rs.next()) {
+				House_ID = rs.getInt("ID");
+
+			}
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			System.out.println("Ban nhap sai Name hoac MAC_Add");
+			System.out.println("Please nhap lai Name and MAC_Add");
+			return -1;
+		}
+		pt.close();
+		System.out.println("Ban da dang ky nha thanh cong ");
+
+		return House_ID;
+	}
+
+	/*
+	 * Update UserName
+	 * 
+	 * @return true if success
+	 * 
+	 * @return false if Fail
+	 */
+	public boolean update_User(String UserName, String PassWord) throws SQLException {
+		PreparedStatement pst = null;
+		int rs;
+		try {
+			;
+			System.out.println(UserName);
+			System.out.println(PassWord);
+			;
+			sqlConn.setAutoCommit(false);
+			String sql = " UPDATE Users " + " SET UserName = ? " + " WHERE PassWord= ?";
+			// String sql = " UPDATE Users " + " SET UserName = ? ," + " WHERE
+			// UserName = ?";
+			pst = sqlConn.prepareStatement(sql);
+
+			pst.setString(1, UserName);
+			pst.setString(2, PassWord);
+
+			rs = pst.executeUpdate();
+
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
+
+		}
+		return true;
+	}
+	/*
+	 * Update UserName base on PassWord
+	 * 
+	 * @return true if success
+	 * 
+	 * @return false if Fail
+	 */
+
+	public boolean update_Password(String PassWord, String UserName) throws SQLException {
+		PreparedStatement pst = null;
+		int rs;
+		try {
+
+			sqlConn.setAutoCommit(false);
+			String sql = " UPDATE Users " + " SET PassWord = ? " + " WHERE UserName = ?";
+			// String sql = " UPDATE Users " + " SET UserName = ? ," + " WHERE
+			// UserName = ?";
+			pst = sqlConn.prepareStatement(sql);
+			pst.setString(1, PassWord);
+			pst.setString(2, UserName);
+			rs = pst.executeUpdate();
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
+
+		}
+		return true;
+	}
+
+}
+
