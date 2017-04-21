@@ -1,0 +1,311 @@
+package pub_sub;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.Timestamp;
+import java.util.concurrent.CountDownLatch;
+
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
+public class mqttServer {
+	public static final String TOPIC_USER_LOGIN = "house/login/user";
+	public static final String TOPIC_HOUSE_REG = "house/register/house";
+	public static final String TOPIC_USER_REG = "house/register/user";
+	public static final String TOPIC_USER_UPDATE = "house/User/update/user";
+	public static final String TOPIC_PASS_UPDATE = "house/User/update/pass";
+	public static final String TOPIC_HOUSE_UPDATE = "house/User/update/house";
+	public static final String TOPIC_HOUSE_GET = "house/get/user";
+	public static final String TOPIC_USER_DELETE = "house/delete/user";
+	public static final String TOPIC_HOUSE_DELETE = "house/delete/house";
+	public static final String TOPIC_HOUSE_ADD = "house/add/house";
+
+	public PreparedStatement statement;
+	public Connection sqlConn;
+	public CountDownLatch latch;
+	public JSONParser parser = new JSONParser();
+
+	public static void main(String[] args) {
+		mqttServer server = new mqttServer();
+
+		server.run();
+
+	}
+
+	public mqttServer() {
+
+	}
+
+	/* ------------PUBLISH RESPOND TO CLIENT----------------- */
+	public void RespondtoClient(String topic, MqttMessage resp_msg) {
+		String broker = "tcp://localhost:1883";
+		String clientId = MqttClient.generateClientId();
+
+		FuncTionMqtt opt = new FuncTionMqtt();
+		// opt.sqlOpen("localhost", "root", "");
+		MemoryPersistence persistence = new MemoryPersistence();
+		try {
+			final MqttClient Server = new MqttClient(broker, clientId, persistence);
+			MqttConnectOptions connOpts = new MqttConnectOptions();
+			connOpts.setCleanSession(true);
+
+			Server.connect(connOpts);
+
+			Server.publish(topic, resp_msg);
+			Server.disconnect();
+
+		} catch (Exception me) {
+
+			me.printStackTrace();
+		}
+	}
+
+	/* Return JSON File to Client */
+	public void respond_JSON(String topic, MqttMessage json) throws Exception {
+		try {
+			String broker = "tcp://localhost:1883";
+			String clientId = MqttClient.generateClientId();
+			MemoryPersistence persistence = new MemoryPersistence();
+			FuncTionMqtt opt = new FuncTionMqtt();
+			final MqttClient Server = new MqttClient(broker, clientId, persistence);
+			MqttConnectOptions connOpts = new MqttConnectOptions();
+
+			connOpts.setCleanSession(true);
+
+			Server.connect(connOpts);
+			// Parse the received request message and convert
+			// payload to a JSONObject
+			Object payloadObj = parser.parse(new String(json.getPayload()));
+			JSONObject jsonPayload = (JSONObject) payloadObj;
+
+			// Get the correlationId and replyTo fields from the
+			// payload
+			String correlationId = (String) jsonPayload.get("correlationId");
+			String replyTo = (String) jsonPayload.get("replyTo");
+			String messageContent = (String) jsonPayload.get("message");
+
+			System.out.println("\nReceived a request message!" + "\n\tCorrel. Id: " + correlationId + "\n\tReply To:   "
+					+ replyTo + "\n\tMessage:    " + messageContent + "\n");
+
+			// Create the response payload in JSON format and set
+			// correlationId
+			// to the id received in the request message above.
+			// Requestor will
+			// use this to correlate the response with its request
+			// message.
+			JSONObject obj = new JSONObject();
+			obj.put("correlationId", correlationId);
+			obj.put("message", "Sample Response");
+			String respPayload = obj.toJSONString();
+
+			// Create a response message and set the response
+			// payload
+			MqttMessage respMessage = new MqttMessage(respPayload.getBytes());
+			respMessage.setQos(0);
+
+			System.out.println("Sending response to: " + replyTo);
+
+			// Publish the response message to the replyTo topic
+			// retrieved
+			// from the request message above
+
+			Server.publish(topic, respMessage);
+
+			latch.countDown(); // unblock main thread
+		} catch (ParseException ex) {
+			System.out.println("Exception parsing request message!");
+			ex.printStackTrace();
+		}
+
+	}
+
+	/* ------------------RUN PROGRAM------------------ */
+	public void run() {
+		String broker = "tcp://localhost:1883";
+		String clientId = MqttClient.generateClientId();
+
+		FuncTionMqtt opt = new FuncTionMqtt();
+		opt.sqlOpen("localhost", "root", "");
+		MemoryPersistence persistence = new MemoryPersistence();
+		try {
+			final MqttClient Server = new MqttClient(broker, clientId, persistence);
+			MqttConnectOptions connOpts = new MqttConnectOptions();
+			System.out.println("Connecting to broker: " + broker);
+			connOpts.setCleanSession(true);
+			connOpts.setKeepAliveInterval(60);
+
+			Server.connect(connOpts);
+			System.out.println("Connected");
+			/*------------MQTT CALLBACK----------------*/
+			Server.setCallback(new MqttCallback() {
+
+				public void connectionLost(Throwable cause) {
+					System.out.println("connectionLost-----------1" + cause);
+					// latch.countDown();
+				}
+
+				public void deliveryComplete(IMqttDeliveryToken token) {
+					System.out.println("deliveryComplete---------2" + token.isComplete());
+				}
+
+				public void messageArrived(String topic, MqttMessage arg1) throws Exception {
+					String time = new Timestamp(System.currentTimeMillis()).toString();
+
+					System.out.println("\n\tTime:  " + time + new String(arg1.getPayload()));
+
+					switch (topic) {
+					/* ---------------LOGIN USER---------------- */
+					case TOPIC_USER_LOGIN:
+
+						String[] login = arg1.toString().split(";");
+						if (login.length <= 1)
+							break;
+
+						int login_id = opt.Login(login[0], login[1]);
+						String Login_ID = Integer.toString(login_id);
+						arg1.setPayload(("Time :" + time + "Gia tri ID login cua ban = " + Login_ID).getBytes());
+						RespondtoClient(topic, arg1);
+
+						break;
+					/*----------DANG KY THEM MOT NGUOI---------------
+					 * Neu da ton tai trong database thi 
+					 * @return ID = 0*/
+
+					case TOPIC_USER_REG:
+						System.out.println("User register :" + " UserName_PassWord : " + arg1);
+						String[] user = arg1.toString().split(";");
+						if (user.length <= 1)
+							break;
+						int user_id = opt.Register_User(user[0], user[1]);
+						String User_ID = Integer.toString(user_id);
+						if (user[0].equals(user[1])) {
+							arg1.setPayload(
+									("Time\n " + time + "ID,password giong nhau,vui long nhap lai  =  " + User_ID)
+											.getBytes());
+							respond_JSON(topic, arg1);
+						} else {
+							arg1.setPayload(("\n\tTime " + time + " \nReturn ID =  0 " + " UserName da ton tai\n"
+									+ " Register Fail\n " + "Return ID khac 0 : Register Successs\n" + "Gia tri ID = "
+									+ User_ID).getBytes());
+							respond_JSON(topic, arg1);
+						}
+
+						break;
+
+					/*--------------DANG KY THEM MOT NHA MOI------------------*/
+					case TOPIC_HOUSE_REG:
+						String[] house = arg1.toString().split(";");
+						if (house.length <= 1)
+							break;
+						int house_id = opt.Register_House(house[0], house[1]);
+						String House_ID = Integer.toString(house_id);
+
+						arg1.setPayload(("ID = 0\n" + " Ten dang ky da ton tai, vui long dang ky lai\n" + "ID khac 0\n"
+								+ "Ban da dan ky thanh cong\n " + " Gia tri ID cua ban: " + House_ID).getBytes());
+						RespondtoClient(topic, arg1);
+						break;
+
+					/*-------------UPDATE USERNAME  DUA VAO PASSWORD-------------*/
+					case TOPIC_USER_UPDATE:
+						String[] up_user = arg1.toString().split(";");
+						if (up_user.length <= 1)
+							break;
+
+						boolean username = opt.update_User(up_user[0], up_user[1]);
+						if (username == true) {
+							arg1.setPayload("Ban da update thanh cong ".getBytes());
+							RespondtoClient(topic, arg1);
+						} else
+							arg1.setPayload("Ban da update that bai ".getBytes());
+						RespondtoClient(topic, arg1);
+
+						break;
+
+					/*-------------UPDATE PASSWORD  DUA VAO USERNAME-------------*/
+					case TOPIC_PASS_UPDATE:
+						String[] up_pass = arg1.toString().split(";");
+						if (up_pass.length <= 1)
+							break;
+
+						boolean pass = opt.update_Password(up_pass[0], up_pass[1]);
+						if (pass == true) {
+							arg1.setPayload("Ban da update  PassWord thanh cong ".getBytes());
+							RespondtoClient(topic, arg1);
+						} else
+							arg1.setPayload("Ban da update PassWord that bai ".getBytes());
+						RespondtoClient(topic, arg1);
+
+						break;
+					/*--------DELETE USER BASE ON ID --------------*/
+					case TOPIC_USER_DELETE:
+						String[] user_del = arg1.toString().split(";");
+						if (user_del.length <= 1)
+							break;
+
+						boolean del = opt.delete_User(user_del[0], user_del[1]);
+
+						if (del == true) {
+							arg1.setPayload("Ban da delete thanh cong ".getBytes());
+
+							RespondtoClient(topic, arg1);
+						} else {
+
+							arg1.setPayload("Ban da delete that bai ".getBytes());
+
+							RespondtoClient(topic, arg1);
+						}
+
+						break;
+					/*---------LAY THONG TIN NGUOI DUNG DUA VAO USERNAME------------*/
+					case TOPIC_HOUSE_GET:
+						String get_User = arg1.toString();
+
+						opt.get_imf_User(get_User);
+
+						RespondtoClient(topic, arg1);
+						break;
+					case TOPIC_HOUSE_ADD:
+						String[] add = arg1.toString().split(";");
+						opt.add_Home(add[0], add[1]);
+						break;
+
+					default:
+
+						break;
+					}
+					// latch.countDown();
+				}
+			});
+			Server.subscribe(TOPIC_USER_LOGIN);
+			Server.subscribe(TOPIC_HOUSE_REG);
+			Server.subscribe(TOPIC_USER_REG);
+			Server.subscribe(TOPIC_USER_UPDATE);
+			Server.subscribe(TOPIC_PASS_UPDATE);
+			Server.subscribe(TOPIC_HOUSE_UPDATE);
+			Server.subscribe(TOPIC_HOUSE_GET);
+			Server.subscribe(TOPIC_USER_DELETE);
+			Server.subscribe(TOPIC_HOUSE_DELETE);
+			Server.subscribe(TOPIC_HOUSE_ADD);
+
+		} catch (Exception me) {
+
+			System.out.println("msg " + me.getMessage());
+			System.out.println("loc " + me.getLocalizedMessage());
+			System.out.println("cause " + me.getCause());
+			System.out.println("excep " + me);
+			me.printStackTrace();
+		}
+
+	}
+
+}
+
+// sudo apt-get purge --auto-remove mosquitto
+
