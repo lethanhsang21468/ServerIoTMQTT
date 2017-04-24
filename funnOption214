@@ -1,311 +1,522 @@
 package pub_sub;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
-import java.sql.Timestamp;
-import java.util.concurrent.CountDownLatch;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
-import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
-import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-public class mqttServer {
-	public static final String TOPIC_USER_LOGIN = "house/login/user";
-	public static final String TOPIC_HOUSE_REG = "house/register/house";
-	public static final String TOPIC_USER_REG = "house/register/user";
-	public static final String TOPIC_USER_UPDATE = "house/User/update/user";
-	public static final String TOPIC_PASS_UPDATE = "house/User/update/pass";
-	public static final String TOPIC_HOUSE_UPDATE = "house/User/update/house";
-	public static final String TOPIC_HOUSE_GET = "house/get/user";
-	public static final String TOPIC_USER_DELETE = "house/delete/user";
-	public static final String TOPIC_HOUSE_DELETE = "house/delete/house";
-	public static final String TOPIC_HOUSE_ADD = "house/add/house";
+public class FuncTionMqtt {
 
 	public PreparedStatement statement;
 	public Connection sqlConn;
-	public CountDownLatch latch;
-	public JSONParser parser = new JSONParser();
 
-	public static void main(String[] args) {
-		mqttServer server = new mqttServer();
-
-		server.run();
+	public FuncTionMqtt() {
 
 	}
 
-	public mqttServer() {
+	/**
+	 * Open connection to database SQL server.
+	 * 
+	 * @return -1 Failed. 0 Success.
+	 */
 
-	}
-
-	/* ------------PUBLISH RESPOND TO CLIENT----------------- */
-	public void RespondtoClient(String topic, MqttMessage resp_msg) {
-		String broker = "tcp://localhost:1883";
-		String clientId = MqttClient.generateClientId();
-
-		FuncTionMqtt opt = new FuncTionMqtt();
-		// opt.sqlOpen("localhost", "root", "");
-		MemoryPersistence persistence = new MemoryPersistence();
+	public int sqlOpen(String host, String user, String password) {
 		try {
-			final MqttClient Server = new MqttClient(broker, clientId, persistence);
-			MqttConnectOptions connOpts = new MqttConnectOptions();
-			connOpts.setCleanSession(true);
-
-			Server.connect(connOpts);
-
-			Server.publish(topic, resp_msg);
-			Server.disconnect();
-
-		} catch (Exception me) {
-
-			me.printStackTrace();
+			String myDriver = "org.gjt.mm.mysql.Driver";
+			String myUrl = "jdbc:mysql://localhost/REGISTER";
+			Class.forName(myDriver);
+			sqlConn = DriverManager.getConnection(myUrl, user, password);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return -1;
 		}
+		return 0;
 	}
 
-	/* Return JSON File to Client */
-	public void respond_JSON(String topic, MqttMessage json) throws Exception {
+	/**
+	 * Close connection to database SQL server.
+	 * 
+	 * @return -1 Failed. 0 Success.
+	 */
+	public int sqlClose() {
 		try {
-			String broker = "tcp://localhost:1883";
-			String clientId = MqttClient.generateClientId();
-			MemoryPersistence persistence = new MemoryPersistence();
-			FuncTionMqtt opt = new FuncTionMqtt();
-			final MqttClient Server = new MqttClient(broker, clientId, persistence);
-			MqttConnectOptions connOpts = new MqttConnectOptions();
+			sqlConn.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			return -1;
+		}
+		return 0;
+	}
 
-			connOpts.setCleanSession(true);
+	/**
+	 * Delete user base on ID.
+	 * 
+	 * @return false Failed.
+	 * @return true Success.
+	 */
+	public boolean delete_User(String UserName, String PassWord) throws SQLException {
+		PreparedStatement pt = null;
 
-			Server.connect(connOpts);
-			// Parse the received request message and convert
-			// payload to a JSONObject
-			Object payloadObj = parser.parse(new String(json.getPayload()));
-			JSONObject jsonPayload = (JSONObject) payloadObj;
+		try {
+			sqlConn.setAutoCommit(false);
+			String sql = "DELETE FROM Users WHERE UserName = ? AND PassWord = ?";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			pt.executeUpdate();
+			sqlConn.commit();
 
-			// Get the correlationId and replyTo fields from the
-			// payload
-			String correlationId = (String) jsonPayload.get("correlationId");
-			String replyTo = (String) jsonPayload.get("replyTo");
-			String messageContent = (String) jsonPayload.get("message");
-
-			System.out.println("\nReceived a request message!" + "\n\tCorrel. Id: " + correlationId + "\n\tReply To:   "
-					+ replyTo + "\n\tMessage:    " + messageContent + "\n");
-
-			// Create the response payload in JSON format and set
-			// correlationId
-			// to the id received in the request message above.
-			// Requestor will
-			// use this to correlate the response with its request
-			// message.
-			JSONObject obj = new JSONObject();
-			obj.put("correlationId", correlationId);
-			obj.put("message", "Sample Response");
-			String respPayload = obj.toJSONString();
-
-			// Create a response message and set the response
-			// payload
-			MqttMessage respMessage = new MqttMessage(respPayload.getBytes());
-			respMessage.setQos(0);
-
-			System.out.println("Sending response to: " + replyTo);
-
-			// Publish the response message to the replyTo topic
-			// retrieved
-			// from the request message above
-
-			Server.publish(topic, respMessage);
-
-			latch.countDown(); // unblock main thread
-		} catch (ParseException ex) {
-			System.out.println("Exception parsing request message!");
+		} catch (SQLException ex) {
 			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
 		}
+		return true;
+	}
+
+	/*
+	 * Login de dang nhap dua vao UserName va PassWord
+	 * 
+	 * @return -1 if Fail
+	 * 
+	 * @return ID if success
+	 */
+	public int Login(String UserName, String PassWord) throws SQLException {
+		PreparedStatement pt = null;
+		int login_ID = 0;
+		ResultSet rs = null;
+		try {
+
+			sqlConn.setAutoCommit(false);
+			String sql = " SELECT * FROM Users WHERE(UserName = ? AND PassWord = ?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
+
+			if (rs.next()) {
+
+				String checkUser = rs.getString(2);
+				String checkPass = rs.getString(3);
+
+				UserName = rs.getString("UserName").trim();
+				PassWord = rs.getString("PassWord").trim();
+
+				if ((checkUser.equals(UserName) && checkPass.equals(PassWord))) {
+
+					login_ID = rs.getInt(1);
+					System.out.println(" Ban da dang nhap thanh cong ");
+
+				}
+
+			}
+
+			else {
+				System.out.println("Dang nhap that bai, yeu cau nhap lai ");
+				return -1;
+			}
+
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			System.out.println("Fail");
+			return -1;
+
+		}
+		pt.close();
+
+		return login_ID;
 
 	}
 
-	/* ------------------RUN PROGRAM------------------ */
-	public void run() {
-		String broker = "tcp://localhost:1883";
-		String clientId = MqttClient.generateClientId();
-
-		FuncTionMqtt opt = new FuncTionMqtt();
-		opt.sqlOpen("localhost", "root", "");
-		MemoryPersistence persistence = new MemoryPersistence();
+	/*
+	 * Register User if Username exists , fail
+	 * 
+	 * @return -1 Fail
+	 * 
+	 * @return ID User
+	 */
+	public int Register_User(String UserName, String PassWord) throws SQLException {
+		int check_register_user = 1;
+		int User_ID = 0;
+		PreparedStatement pt = null;
+		ResultSet rs = null;
+		String sql;
+		String sql1;
 		try {
-			final MqttClient Server = new MqttClient(broker, clientId, persistence);
-			MqttConnectOptions connOpts = new MqttConnectOptions();
-			System.out.println("Connecting to broker: " + broker);
-			connOpts.setCleanSession(true);
-			connOpts.setKeepAliveInterval(60);
 
-			Server.connect(connOpts);
-			System.out.println("Connected");
-			/*------------MQTT CALLBACK----------------*/
-			Server.setCallback(new MqttCallback() {
+			sqlConn.setAutoCommit(false);
+			sql = "SELECT * FROM Users WHERE(UserName =? AND PassWord =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
 
-				public void connectionLost(Throwable cause) {
-					System.out.println("connectionLost-----------1" + cause);
-					// latch.countDown();
+			while (rs.next()) {
+
+				String checkUser = rs.getString(2);
+				String checkPass = rs.getString(3);
+
+				UserName = rs.getString(2).trim();
+				PassWord = rs.getString(3).trim();
+				// if ((checkUser.equals(UserName) &&
+				// checkPass.equals(PassWord)) && ((UserName).equals(PassWord))
+				// && (checkUser.equals(UserName)) &&
+				// (checkPass.equals(PassWord))) {
+				if ((checkUser.equals(UserName) && checkPass.equals(PassWord)) || (UserName).equals(PassWord)) {
+					check_register_user = 0;
+
 				}
 
-				public void deliveryComplete(IMqttDeliveryToken token) {
-					System.out.println("deliveryComplete---------2" + token.isComplete());
+			}
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return -1;
+		}
+		pt.close();
+		if (check_register_user == 1) {
+			// insert
+
+			sql = "INSERT INTO Users(UserName,PassWord) VALUES(?,?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			pt.executeUpdate();
+			sql = "SELECT ID FROM Users WHERE(UserName =? AND PassWord =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			pt.setString(2, PassWord);
+			rs = pt.executeQuery();
+
+			while (rs.next()) {
+				User_ID = rs.getInt(1);
+			}
+			sqlConn.commit();
+		}
+		return User_ID;
+
+	}
+
+	/*
+	 * Register House
+	 * 
+	 * @return -1 Fail
+	 * 
+	 * @return House_ID
+	 */
+	// public int Register_House(String Name, String MAC_Add) throws
+	// SQLException {
+	//
+	// PreparedStatement pt = null;
+	// int House_ID = 0;
+	// ResultSet rs = null;
+	// try {
+	// sqlConn.setAutoCommit(false);
+	//
+	// String sql = "INSERT INTO Home(Name,MAC_Add) VALUES(?,?)";
+	// pt = sqlConn.prepareStatement(sql);
+	// pt.setString(1, Name);
+	// pt.setString(2, MAC_Add);
+	// pt.executeUpdate();
+	// sql = "SELECT ID FROM Home WHERE(Name =? AND MAC_Add =?)";
+	// pt = sqlConn.prepareStatement(sql);
+	// pt.setString(1, Name);
+	// pt.setString(2, MAC_Add);
+	// rs = pt.executeQuery();
+	//
+	// while (rs.next()) {
+	// House_ID = rs.getInt("ID");
+	//
+	// }
+	// sqlConn.commit();
+	//
+	// } catch (SQLException ex) {
+	// ex.printStackTrace();
+	// sqlConn.rollback();
+	// System.out.println("Ban nhap sai Name hoac MAC_Add");
+	// System.out.println("Please nhap lai Name and MAC_Add");
+	// return -1;
+	// }
+	// pt.close();
+	// System.out.println("Ban da dang ky nha thanh cong ");
+	//
+	// return House_ID;
+	// }
+	/*
+	 * test register house
+	 */
+	public int Register_House(String Name, String MAC_Add) throws SQLException {
+		int check_register_house = 1;
+		int Home_ID = 0;
+		PreparedStatement pt = null;
+		ResultSet rs = null;
+		String sql;
+		try {
+
+			sqlConn.setAutoCommit(false);
+			sql = "SELECT * FROM Home WHERE(Name =? AND MAC_Add =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, Name);
+			pt.setString(2, MAC_Add);
+			rs = pt.executeQuery();
+
+			while (rs.next()) {
+
+				String checkName = rs.getString(2);
+				String checkMAC_Add = rs.getString(3);
+
+				Name = rs.getString(2).trim();
+				MAC_Add = rs.getString(3).trim();
+				// if ((checkUser.equals(UserName) &&
+				// checkPass.equals(PassWord)) && ((UserName).equals(PassWord))
+				// && (checkUser.equals(UserName)) &&
+				// (checkPass.equals(PassWord))) {
+				if ((checkName.equals(Name) && checkMAC_Add.equals(MAC_Add)) || (Name).equals(MAC_Add)) {
+					check_register_house = 0;
+
 				}
 
-				public void messageArrived(String topic, MqttMessage arg1) throws Exception {
-					String time = new Timestamp(System.currentTimeMillis()).toString();
+			}
+			sqlConn.commit();
 
-					System.out.println("\n\tTime:  " + time + new String(arg1.getPayload()));
+		} catch (SQLException ex) {
 
-					switch (topic) {
-					/* ---------------LOGIN USER---------------- */
-					case TOPIC_USER_LOGIN:
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return -1;
+		}
+		pt.close();
+		if (check_register_house == 1) {
+			// insert
 
-						String[] login = arg1.toString().split(";");
-						if (login.length <= 1)
-							break;
+			sql = "INSERT INTO Home(Name,MAC_Add) VALUES(?,?)";
 
-						int login_id = opt.Login(login[0], login[1]);
-						String Login_ID = Integer.toString(login_id);
-						arg1.setPayload(("Time :" + time + "Gia tri ID login cua ban = " + Login_ID).getBytes());
-						RespondtoClient(topic, arg1);
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, Name);
+			pt.setString(2, MAC_Add);
 
-						break;
-					/*----------DANG KY THEM MOT NGUOI---------------
-					 * Neu da ton tai trong database thi 
-					 * @return ID = 0*/
+			pt.executeUpdate();
+			sql = "SELECT ID FROM Home WHERE(Name =? AND MAC_Add =?)";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, Name);
+			pt.setString(2, MAC_Add);
+			rs = pt.executeQuery();
 
-					case TOPIC_USER_REG:
-						System.out.println("User register :" + " UserName_PassWord : " + arg1);
-						String[] user = arg1.toString().split(";");
-						if (user.length <= 1)
-							break;
-						int user_id = opt.Register_User(user[0], user[1]);
-						String User_ID = Integer.toString(user_id);
-						if (user[0].equals(user[1])) {
-							arg1.setPayload(
-									("Time\n " + time + "ID,password giong nhau,vui long nhap lai  =  " + User_ID)
-											.getBytes());
-							respond_JSON(topic, arg1);
-						} else {
-							arg1.setPayload(("\n\tTime " + time + " \nReturn ID =  0 " + " UserName da ton tai\n"
-									+ " Register Fail\n " + "Return ID khac 0 : Register Successs\n" + "Gia tri ID = "
-									+ User_ID).getBytes());
-							respond_JSON(topic, arg1);
-						}
+			while (rs.next()) {
+				Home_ID = rs.getInt(1);
 
-						break;
+				sql = "INSERT INTO HOME_MANAGE(Home_ID) VALUES(?)";
+				pt = sqlConn.prepareStatement(sql);
+				pt.setInt(1, Home_ID);
+				pt.executeUpdate();
 
-					/*--------------DANG KY THEM MOT NHA MOI------------------*/
-					case TOPIC_HOUSE_REG:
-						String[] house = arg1.toString().split(";");
-						if (house.length <= 1)
-							break;
-						int house_id = opt.Register_House(house[0], house[1]);
-						String House_ID = Integer.toString(house_id);
+			}
+			sqlConn.commit();
+		}
+		return Home_ID;
 
-						arg1.setPayload(("ID = 0\n" + " Ten dang ky da ton tai, vui long dang ky lai\n" + "ID khac 0\n"
-								+ "Ban da dan ky thanh cong\n " + " Gia tri ID cua ban: " + House_ID).getBytes());
-						RespondtoClient(topic, arg1);
-						break;
+	}
 
-					/*-------------UPDATE USERNAME  DUA VAO PASSWORD-------------*/
-					case TOPIC_USER_UPDATE:
-						String[] up_user = arg1.toString().split(";");
-						if (up_user.length <= 1)
-							break;
+	/*
+	 * Update UserName
+	 * 
+	 * @return true if success
+	 * 
+	 * @return false if Fail
+	 */
+	public boolean update_User(String UserName, String ID) throws SQLException {
+		int ID1 = Integer.parseInt(ID);
+		PreparedStatement pst = null;
+		int rs;
+		try {
+			;
+			System.out.println(UserName);
+			// System.out.println(PassWord);
+			System.out.println(ID1);
+			;
+			sqlConn.setAutoCommit(false);
+			String sql = " UPDATE Users " + " SET UserName = ? " + " WHERE ID=?";
+			// String sql = " UPDATE Users " + " SET UserName = ? ," + " WHERE
+			// UserName = ?";
+			pst = sqlConn.prepareStatement(sql);
 
-						boolean username = opt.update_User(up_user[0], up_user[1]);
-						if (username == true) {
-							arg1.setPayload("Ban da update thanh cong ".getBytes());
-							RespondtoClient(topic, arg1);
-						} else
-							arg1.setPayload("Ban da update that bai ".getBytes());
-						RespondtoClient(topic, arg1);
+			pst.setString(1, UserName);
+			// pst.setString(2, PassWord);
+			pst.setInt(2, ID1);
 
-						break;
+			rs = pst.executeUpdate();
 
-					/*-------------UPDATE PASSWORD  DUA VAO USERNAME-------------*/
-					case TOPIC_PASS_UPDATE:
-						String[] up_pass = arg1.toString().split(";");
-						if (up_pass.length <= 1)
-							break;
+			sqlConn.commit();
 
-						boolean pass = opt.update_Password(up_pass[0], up_pass[1]);
-						if (pass == true) {
-							arg1.setPayload("Ban da update  PassWord thanh cong ".getBytes());
-							RespondtoClient(topic, arg1);
-						} else
-							arg1.setPayload("Ban da update PassWord that bai ".getBytes());
-						RespondtoClient(topic, arg1);
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
 
-						break;
-					/*--------DELETE USER BASE ON ID --------------*/
-					case TOPIC_USER_DELETE:
-						String[] user_del = arg1.toString().split(";");
-						if (user_del.length <= 1)
-							break;
+		}
+		return true;
+	}
 
-						boolean del = opt.delete_User(user_del[0], user_del[1]);
+	/*
+	 * Update UserName base on PassWord
+	 * 
+	 * @return true if success
+	 * 
+	 * @return false if Fail
+	 */
+	/* test update user base on id */
+	public boolean update(String UserName, String PassWord, String ID) throws SQLException {
+		int ID1 = Integer.parseInt(ID);
+		PreparedStatement pst = null;
+		int rs;
+		try {
 
-						if (del == true) {
-							arg1.setPayload("Ban da delete thanh cong ".getBytes());
+			sqlConn.setAutoCommit(false);
+			String sql = " UPDATE Users " + " SET UserName = ? , PassWord =?" + " WHERE ID = ?";
+			// String sql = " UPDATE Users " + " SET UserName = ? ," + " WHERE
+			// UserName = ?";
+			pst = sqlConn.prepareStatement(sql);
+			pst.setString(1, UserName);
+			pst.setString(2, PassWord);
+			pst.setInt(3, ID1);
 
-							RespondtoClient(topic, arg1);
-						} else {
+			rs = pst.executeUpdate();
+			sqlConn.commit();
 
-							arg1.setPayload("Ban da delete that bai ".getBytes());
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
 
-							RespondtoClient(topic, arg1);
-						}
+		}
+		return true;
+	}
 
-						break;
-					/*---------LAY THONG TIN NGUOI DUNG DUA VAO USERNAME------------*/
-					case TOPIC_HOUSE_GET:
-						String get_User = arg1.toString();
+	public boolean update_Password(String PassWord, String UserName) throws SQLException {
+		PreparedStatement pst = null;
+		int rs;
+		try {
 
-						opt.get_imf_User(get_User);
+			sqlConn.setAutoCommit(false);
+			String sql = " UPDATE Users " + " SET PassWord = ? " + " WHERE UserName = ?";
+			// String sql = " UPDATE Users " + " SET UserName = ? ," + " WHERE
+			// UserName = ?";
+			pst = sqlConn.prepareStatement(sql);
+			pst.setString(1, PassWord);
+			pst.setString(2, UserName);
+			rs = pst.executeUpdate();
+			sqlConn.commit();
 
-						RespondtoClient(topic, arg1);
-						break;
-					case TOPIC_HOUSE_ADD:
-						String[] add = arg1.toString().split(";");
-						opt.add_Home(add[0], add[1]);
-						break;
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			sqlConn.rollback();
+			return false;
 
-					default:
+		}
+		return true;
+	}
 
-						break;
-					}
-					// latch.countDown();
+	/*
+	 * Lay thong tin nguoi dung dua vao ID tra ve kieu JSON
+	 */
+	public int get_imf_User(String UserName) throws SQLException {
+
+		try {
+			PreparedStatement pst = null;
+			ResultSet rs = null;
+			sqlConn.setAutoCommit(false);
+			String sql = "SELECT  ID,PassWord FROM Users WHERE UserName = ? ";
+			pst = sqlConn.prepareStatement(sql);
+			pst.setString(1, UserName);
+			rs = pst.executeQuery();
+
+			while (rs.next()) {
+				int ID = rs.getInt(1);
+				String PassWord = rs.getString(2);
+
+				System.out.println("ID :" + ID);
+				System.out.println("PassWord :" + PassWord);
+				// JSONObject jsonObject = new JSONObject();
+				// jsonObject.put("UserID", ID);
+				// jsonObject.put("PassWord", PassWord);
+				// jsonObject.toString();
+				// client String
+				String respond = "";
+				JSONParser jsonParser = new JSONParser();
+				JSONObject jsonObject;
+				try {
+					jsonObject = (JSONObject) jsonParser.parse(respond);
+					jsonObject.get("UserID");
+					jsonObject.get("PassWord");
+				} catch (ParseException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
 				}
-			});
-			Server.subscribe(TOPIC_USER_LOGIN);
-			Server.subscribe(TOPIC_HOUSE_REG);
-			Server.subscribe(TOPIC_USER_REG);
-			Server.subscribe(TOPIC_USER_UPDATE);
-			Server.subscribe(TOPIC_PASS_UPDATE);
-			Server.subscribe(TOPIC_HOUSE_UPDATE);
-			Server.subscribe(TOPIC_HOUSE_GET);
-			Server.subscribe(TOPIC_USER_DELETE);
-			Server.subscribe(TOPIC_HOUSE_DELETE);
-			Server.subscribe(TOPIC_HOUSE_ADD);
+			}
+			rs.close();
+			sqlConn.commit();
 
-		} catch (Exception me) {
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+			return -1;
 
-			System.out.println("msg " + me.getMessage());
-			System.out.println("loc " + me.getLocalizedMessage());
-			System.out.println("cause " + me.getCause());
-			System.out.println("excep " + me);
-			me.printStackTrace();
+		}
+		return 0;
+	}
+
+	/*--------Ham add_Home -------------*/
+	public void add_Home(String UserName, String MAC_Add) throws SQLException {
+		PreparedStatement pt = null;
+		ResultSet rs = null;
+		ResultSet rs1 = null;
+		String sql;
+		String sql1;
+		String sql2;
+		String sql3;
+		int User_ID;
+		int Home_ID;
+		try {
+			sqlConn.setAutoCommit(false);
+			sql = "SELECT ID FROM Home WHERE(MAC_Add =? )";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, MAC_Add);
+			rs = pt.executeQuery();
+			sql = "SELECT ID FROM Users WHERE(UserName =? )";
+			pt = sqlConn.prepareStatement(sql);
+			pt.setString(1, UserName);
+			rs1 = pt.executeQuery();
+			if (rs.next() && rs1.next()) {
+				User_ID = rs1.getInt(1);
+				Home_ID = rs.getInt(1);
+				sql = "INSERT INTO HOME_MANAGE(Home_ID,User_ID) VALUES(?,?)";
+
+				pt = sqlConn.prepareStatement(sql);
+				pt.setInt(2, User_ID);
+				pt.setInt(1, Home_ID);
+				pt.executeUpdate();
+
+			}
+			rs.close();
+			rs1.close();
+			sqlConn.commit();
+
+		} catch (SQLException ex) {
+			ex.printStackTrace();
+
 		}
 
 	}
 
 }
-
-// sudo apt-get purge --auto-remove mosquitto
 
